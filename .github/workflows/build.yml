@@ -34,10 +34,10 @@ jobs:
           npm install @capacitor/cli @capacitor/android @capacitor-community/admob
           npx cap add android
           
-          # 🔥 FIX 1: App Crash Fix (Injecting AdMob App ID directly into Android Core)
-          sed -i '/<application/a \        <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-7377091766113250~6802900116"/>' android/app/src/main/AndroidManifest.xml
+          # 🔥 FIX 1: App Crash Fix (Safe Injection at the end of application tag)
+          sed -i 's|</application>|<meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-7377091766113250~6802900116"/>\n    </application>|g' android/app/src/main/AndroidManifest.xml
           
-          # 🔥 FIX 2: JS Initialize Fix (Auto-fixing your code so you dont re-upload)
+          # 🔥 FIX 2: JS Initialize Fix
           find www -type f \( -name "*.html" -o -name "*.js" \) -exec sed -i 's/await AdMob.prepareInterstitial/await AdMob.initialize(); await AdMob.prepareInterstitial/g' {} +
           
           npx cap sync android
