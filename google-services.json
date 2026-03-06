@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "124739082978",
+    "project_id": "ssc-desk",
+    "storage_bucket": "ssc-desk.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:124739082978:android:89014c82d82aa501eb5cbb",
+        "android_client_info": {
+          "package_name": "com.ssc.desk"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "124739082978-febi8fp274f5umr12c0k1pdfl6qarn4g.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDV4Tyf7CBhnrUx-29eVDsSVMZVMuGBFW0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "124739082978-febi8fp274f5umr12c0k1pdfl6qarn4g.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
