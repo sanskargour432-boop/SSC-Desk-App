@@ -1,4 +1,4 @@
-name: Make Android APK and AAB
+name: Build Native Android APK
 
 on:
   push:
@@ -12,111 +12,25 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set Permanent Keystore
-        run: |
-          mkdir -p ~/.android
-          wget https://raw.githubusercontent.com/expo/expo/main/templates/expo-template-bare-minimum/android/app/debug.keystore -O ~/.android/debug.keystore
-
-      - name: Unzip the App
-        run: |
-          unzip *.zip -d myapp || true
-        
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '21'
+          java-version: '17'
 
-      - name: Install and Auto-Fix Code
+      - name: Setup App Logo
         run: |
-          cd myapp
-          npm install
-          npm install @capacitor/cli @capacitor/android @capacitor-community/admob @capacitor/assets @capacitor-firebase/authentication
-          
-          # 🔥 EXACT FIREBASE PACKAGE NAME FIX 🔥
-          echo '{"appId": "com.sscdesk.pro", "appName": "SSC Desk", "webDir": "www", "plugins": {"FirebaseAuthentication": {"skipNativeAuth": false}}}' > capacitor.config.json
-          
-          npx cap add android
-          
-          # Copy Firebase Config
-          cp ../google-services.json android/app/ || true
-          
-          # Add Google Services Plugin
-          sed -i '0,/dependencies {/s//dependencies {\n        classpath "com.google.gms:google-services:4.4.1"/' android/build.gradle
-          echo "apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
-          
-          # Fix JS for Native Login & AdMob
-          cat << 'EOF' > fix_code.py
-          with open('www/index.html', 'r') as f: code = f.read()
-          
-          login_new = """
-              if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-                  try {
-                      const result = await window.Capacitor.Plugins.FirebaseAuthentication.signInWithGoogle();
-                      const credential = firebase.auth.GoogleAuthProvider.credential(result.credential.idToken);
-                      await firebase.auth().signInWithCredential(credential);
-                  } catch (e) {
-                      alert('Native login error: ' + JSON.stringify(e));
-                  }
-              } else {
-                  auth.signInWithPopup(googleProvider);
-              }
-          """
-          code = code.replace('auth.signInWithPopup(googleProvider)', login_new)
-          code = code.replace('auth.signInWithRedirect(googleProvider)', login_new)
-          code = code.replace('function loginWithGoogle()', 'async function loginWithGoogle()')
-          
-          admob_new = """async function showAdAndStartTest(startCallback) {
-              if (window.Capacitor && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins.AdMob) {
-                  try {
-                      const { AdMob } = window.Capacitor.Plugins;
-                      await AdMob.removeAllListeners();
-                      AdMob.addListener('interstitialDismissed', () => { startCallback(); });
-                      await AdMob.prepareInterstitial({ adId: 'ca-app-pub-7377091766113250/3869760803', isTesting: false });
-                      await AdMob.showInterstitial();
-                  } catch (error) { startCallback(); }
-              } else { startCallback(); }
-          }"""
-          
-          parts = code.split('async function showAdAndStartTest(startCallback) {', 1)
-          if len(parts) == 2:
-              sub_parts = parts[1].split('function startQuiz()', 1)
-              if len(sub_parts) == 2:
-                  code = parts[0] + admob_new + '\n\n// --- START QUIZ ---\nfunction startQuiz()' + sub_parts[1]
-          
-          with open('www/index.html', 'w') as f: f.write(code)
-          EOF
-          python3 fix_code.py
-          
-          # Auto-Generate Icons from your logo.png
-          mkdir -p assets
-          cp www/logo.png assets/icon.png || true
-          cp www/logo.png assets/splash.png || true
-          npx @capacitor/assets generate --android || true
-          
-          # Fix AndroidManifest AdMob ID and Status Bar
-          sed -i 's|</application>|<meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-7377091766113250~6802900116"/>\n    </application>|g' android/app/src/main/AndroidManifest.xml
-          sed -i 's|<item name="android:windowFullscreen">true</item>|<item name="android:windowFullscreen">false</item>|g' android/app/src/main/res/values/styles.xml || true
-          sed -i 's|<style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">|<style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">\n        <item name="android:windowFullscreen">false</item>|g' android/app/src/main/res/values/styles.xml || true
-          
-          npx cap sync android
+          mkdir -p app/src/main/res/mipmap-xxxhdpi
+          cp logo.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png || true
 
-      - name: Build App
+      - name: Generate Engine & Build APK
         run: |
-          cd myapp/android
+          gradle wrapper
           chmod +x gradlew
           ./gradlew assembleDebug
-          ./gradlew bundleDebug
 
-      - name: Provide App Files
+      - name: Provide Native APK
         uses: actions/upload-artifact@v4
         with:
-          name: SSC-Desk-Premium-Final
-          path: |
-            myapp/android/app/build/outputs/apk/debug/app-debug.apk
-            myapp/android/app/build/outputs/bundle/debug/app-debug.aab
+          name: SSC-Desk-Native-V1
+          path: app/build/outputs/apk/debug/app-debug.apk
