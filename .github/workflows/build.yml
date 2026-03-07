@@ -27,45 +27,38 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Convert to Android & Fixes
+      - name: Convert to Android
         run: |
           cd myapp
           npm install
           npm install @capacitor/cli @capacitor/android @capacitor-community/admob @capacitor/assets
           npx cap add android
           
-          # 🔥 FIX 1: App Crash Fix (Safe AdMob Injection)
+          # Fixes
           sed -i 's|</application>|<meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-7377091766113250~6802900116"/>\n    </application>|g' android/app/src/main/AndroidManifest.xml
-          
-          # 🔥 FIX 2: JS Initialize Fix
           find www -type f \( -name "*.html" -o -name "*.js" \) -exec sed -i 's/await AdMob.prepareInterstitial/await AdMob.initialize(); await AdMob.prepareInterstitial/g' {} +
           
-          # 🔥 FIX 3: Auto-Generate App Icons (6 Sizes Automatically)
-          mkdir -p assets
-          cp www/logo.png assets/icon.png
-          cp www/logo.png assets/splash.png
-          npx @capacitor/assets generate --android
-          
-          # 🔥 FIX 4: Show Status Bar (Battery/Time) Fix
+          # Status bar fix
           sed -i 's|<item name="android:windowFullscreen">true</item>|<item name="android:windowFullscreen">false</item>|g' android/app/src/main/res/values/styles.xml || true
-          sed -i 's|<style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">|<style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">\n        <item name="android:windowFullscreen">false</item>|g' android/app/src/main/res/values/styles.xml || true
           
-          # 🔥 FIX 5: Google Sign-In Fix (Copying Firebase Identity File)
-          cp ../google-services.json android/app/
+          # Copy Firebase File
+          cp ../google-services.json android/app/ || true
           
           npx cap sync android
 
-      - name: Build the APK and AAB Files
+      - name: Build App & Extract SHA-1 Key
         run: |
           cd myapp/android
           chmod +x gradlew
           ./gradlew assembleDebug
           ./gradlew bundleDebug
+          ./gradlew signingReport > ../../sha1-report.txt
 
-      - name: Provide App Files (APK & AAB)
+      - name: Provide App Files
         uses: actions/upload-artifact@v4
         with:
           name: SSC-Desk-App-Files
           path: |
             myapp/android/app/build/outputs/apk/debug/app-debug.apk
             myapp/android/app/build/outputs/bundle/debug/app-debug.aab
+            sha1-report.txt
