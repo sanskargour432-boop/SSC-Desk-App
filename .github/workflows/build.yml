@@ -37,6 +37,10 @@ jobs:
           cd myapp
           npm install
           npm install @capacitor/cli @capacitor/android @capacitor-community/admob @capacitor/assets @capacitor-firebase/authentication
+          
+          # 🔥 EXACT FIREBASE PACKAGE NAME FIX 🔥
+          echo '{"appId": "com.sscdesk.pro", "appName": "SSC Desk", "webDir": "www", "plugins": {"FirebaseAuthentication": {"skipNativeAuth": false}}}' > capacitor.config.json
+          
           npx cap add android
           
           # Copy Firebase Config
@@ -89,20 +93,25 @@ jobs:
           EOF
           python3 fix_code.py
           
-          # Fix AndroidManifest and Status Bar
+          # Auto-Generate Icons from your logo.png
+          mkdir -p assets
+          cp www/logo.png assets/icon.png || true
+          cp www/logo.png assets/splash.png || true
+          npx @capacitor/assets generate --android || true
+          
+          # Fix AndroidManifest AdMob ID and Status Bar
           sed -i 's|</application>|<meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-7377091766113250~6802900116"/>\n    </application>|g' android/app/src/main/AndroidManifest.xml
           sed -i 's|<item name="android:windowFullscreen">true</item>|<item name="android:windowFullscreen">false</item>|g' android/app/src/main/res/values/styles.xml || true
           sed -i 's|<style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">|<style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">\n        <item name="android:windowFullscreen">false</item>|g' android/app/src/main/res/values/styles.xml || true
           
           npx cap sync android
 
-      - name: Build App & Get Fixed SHA-1
+      - name: Build App
         run: |
           cd myapp/android
           chmod +x gradlew
           ./gradlew assembleDebug
           ./gradlew bundleDebug
-          ./gradlew signingReport > ../../fixed-sha1-report.txt
 
       - name: Provide App Files
         uses: actions/upload-artifact@v4
@@ -111,4 +120,3 @@ jobs:
           path: |
             myapp/android/app/build/outputs/apk/debug/app-debug.apk
             myapp/android/app/build/outputs/bundle/debug/app-debug.aab
-            fixed-sha1-report.txt
