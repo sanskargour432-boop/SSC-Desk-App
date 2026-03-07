@@ -27,38 +27,91 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Convert to Android
+      - name: Install and Auto-Fix Code
         run: |
           cd myapp
           npm install
-          npm install @capacitor/cli @capacitor/android @capacitor-community/admob @capacitor/assets
+          npm install @capacitor/cli @capacitor/android @capacitor-community/admob @capacitor/assets @capacitor-firebase/authentication
           npx cap add android
           
-          # Fixes
+          # Copy Firebase Config for Native Login
+          cp ../google-services.json android/app/
+          
+          # Inject Google Services into Android Build
+          sed -i '0,/dependencies {/s//dependencies {\n        classpath "com.google.gms:google-services:4.4.1"/' android/build.gradle
+          echo "apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
+          
+          # 🤖 Python Bot to automatically fix your index.html
+          cat << 'EOF' > fix_code.py
+          with open('www/index.html', 'r') as f: code = f.read()
+          
+          # --- Native Google Login Hack ---
+          login_new = """
+              if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+                  try {
+                      const result = await window.Capacitor.Plugins.FirebaseAuthentication.signInWithGoogle();
+                      const credential = firebase.auth.GoogleAuthProvider.credential(result.credential.idToken);
+                      await firebase.auth().signInWithCredential(credential);
+                  } catch (e) {
+                      alert('Native Login Failed: ' + JSON.stringify(e));
+                  }
+              } else {
+                  auth.signInWithPopup(googleProvider);
+              }
+          """
+          code = code.replace('auth.signInWithPopup(googleProvider)', login_new)
+          code = code.replace('auth.signInWithRedirect(googleProvider)', login_new)
+          code = code.replace('function loginWithGoogle()', 'async function loginWithGoogle()')
+          
+          # --- AdMob Instant Start Hack ---
+          admob_new = """async function showAdAndStartTest(startCallback) {
+              if (window.Capacitor && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins.AdMob) {
+                  try {
+                      const { AdMob } = window.Capacitor.Plugins;
+                      await AdMob.removeAllListeners();
+                      AdMob.addListener('interstitialDismissed', () => { startCallback(); });
+                      await AdMob.prepareInterstitial({ adId: 'ca-app-pub-7377091766113250/3869760803', isTesting: false });
+                      await AdMob.showInterstitial();
+                  } catch (error) { startCallback(); }
+              } else { startCallback(); }
+          }"""
+          
+          parts = code.split('async function showAdAndStartTest(startCallback) {', 1)
+          if len(parts) == 2:
+              sub_parts = parts[1].split('function startQuiz()', 1)
+              if len(sub_parts) == 2:
+                  code = parts[0] + admob_new + '\n\n// --- START QUIZ ---\nfunction startQuiz()' + sub_parts[1]
+          
+          with open('www/index.html', 'w') as f: f.write(code)
+          EOF
+          python3 fix_code.py
+          
+          # Fix Android Manifest AdMob App ID
           sed -i 's|</application>|<meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-7377091766113250~6802900116"/>\n    </application>|g' android/app/src/main/AndroidManifest.xml
-          find www -type f \( -name "*.html" -o -name "*.js" \) -exec sed -i 's/await AdMob.prepareInterstitial/await AdMob.initialize(); await AdMob.prepareInterstitial/g' {} +
           
-          # Status bar fix
+          # Fix Fullscreen Status Bar
           sed -i 's|<item name="android:windowFullscreen">true</item>|<item name="android:windowFullscreen">false</item>|g' android/app/src/main/res/values/styles.xml || true
+          sed -i 's|<style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">|<style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">\n        <item name="android:windowFullscreen">false</item>|g' android/app/src/main/res/values/styles.xml || true
           
-          # Copy Firebase File
-          cp ../google-services.json android/app/ || true
+          # Auto-Generate Icons
+          mkdir -p assets
+          cp www/logo.png assets/icon.png || true
+          cp www/logo.png assets/splash.png || true
+          npx @capacitor/assets generate --android || true
           
           npx cap sync android
 
-      - name: Build App & Extract SHA-1 Key
+      - name: Build Final App
         run: |
           cd myapp/android
           chmod +x gradlew
           ./gradlew assembleDebug
           ./gradlew bundleDebug
-          ./gradlew signingReport > ../../sha1-report.txt
 
       - name: Provide App Files
         uses: actions/upload-artifact@v4
         with:
-          name: SSC-Desk-App-Files
+          name: SSC-Desk-Premium-Final
           path: |
             myapp/android/app/build/outputs/apk/debug/app-debug.apk
             myapp/android/app/build/outputs/bundle/debug/app-debug.aab
-            sha1-report.txt
