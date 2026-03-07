@@ -12,9 +12,14 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Set Permanent Keystore
+        run: |
+          mkdir -p ~/.android
+          wget https://raw.githubusercontent.com/expo/expo/main/templates/expo-template-bare-minimum/android/app/debug.keystore -O ~/.android/debug.keystore
+
       - name: Unzip the App
         run: |
-          unzip *.zip -d myapp
+          unzip *.zip -d myapp || true
         
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -34,18 +39,17 @@ jobs:
           npm install @capacitor/cli @capacitor/android @capacitor-community/admob @capacitor/assets @capacitor-firebase/authentication
           npx cap add android
           
-          # Copy Firebase Config for Native Login
-          cp ../google-services.json android/app/
+          # Copy Firebase Config
+          cp ../google-services.json android/app/ || true
           
-          # Inject Google Services into Android Build
+          # Add Google Services Plugin
           sed -i '0,/dependencies {/s//dependencies {\n        classpath "com.google.gms:google-services:4.4.1"/' android/build.gradle
           echo "apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
           
-          # 🤖 Python Bot to automatically fix your index.html
+          # Fix JS for Native Login & AdMob
           cat << 'EOF' > fix_code.py
           with open('www/index.html', 'r') as f: code = f.read()
           
-          # --- Native Google Login Hack ---
           login_new = """
               if (window.Capacitor && window.Capacitor.isNativePlatform()) {
                   try {
@@ -53,7 +57,7 @@ jobs:
                       const credential = firebase.auth.GoogleAuthProvider.credential(result.credential.idToken);
                       await firebase.auth().signInWithCredential(credential);
                   } catch (e) {
-                      alert('Native Login Failed: ' + JSON.stringify(e));
+                      alert('Native login error: ' + JSON.stringify(e));
                   }
               } else {
                   auth.signInWithPopup(googleProvider);
@@ -63,7 +67,6 @@ jobs:
           code = code.replace('auth.signInWithRedirect(googleProvider)', login_new)
           code = code.replace('function loginWithGoogle()', 'async function loginWithGoogle()')
           
-          # --- AdMob Instant Start Hack ---
           admob_new = """async function showAdAndStartTest(startCallback) {
               if (window.Capacitor && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins.AdMob) {
                   try {
@@ -86,27 +89,20 @@ jobs:
           EOF
           python3 fix_code.py
           
-          # Fix Android Manifest AdMob App ID
+          # Fix AndroidManifest and Status Bar
           sed -i 's|</application>|<meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-7377091766113250~6802900116"/>\n    </application>|g' android/app/src/main/AndroidManifest.xml
-          
-          # Fix Fullscreen Status Bar
           sed -i 's|<item name="android:windowFullscreen">true</item>|<item name="android:windowFullscreen">false</item>|g' android/app/src/main/res/values/styles.xml || true
           sed -i 's|<style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">|<style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">\n        <item name="android:windowFullscreen">false</item>|g' android/app/src/main/res/values/styles.xml || true
           
-          # Auto-Generate Icons
-          mkdir -p assets
-          cp www/logo.png assets/icon.png || true
-          cp www/logo.png assets/splash.png || true
-          npx @capacitor/assets generate --android || true
-          
           npx cap sync android
 
-      - name: Build Final App
+      - name: Build App & Get Fixed SHA-1
         run: |
           cd myapp/android
           chmod +x gradlew
           ./gradlew assembleDebug
           ./gradlew bundleDebug
+          ./gradlew signingReport > ../../fixed-sha1-report.txt
 
       - name: Provide App Files
         uses: actions/upload-artifact@v4
@@ -115,3 +111,4 @@ jobs:
           path: |
             myapp/android/app/build/outputs/apk/debug/app-debug.apk
             myapp/android/app/build/outputs/bundle/debug/app-debug.aab
+            fixed-sha1-report.txt
